@@ -69,6 +69,17 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/interviews", interviewRoutes);
 app.use("/api/reports", reportRoutes);
 
+
+// Serve frontend
+const clientDist = path.join(process.cwd(), '../client/dist');
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
+
 app.use(notFound);
 app.use(errorHandler);
 
