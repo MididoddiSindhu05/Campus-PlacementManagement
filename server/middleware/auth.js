@@ -1,5 +1,4 @@
-import { User } from "../models/User.js";
-import { Student } from "../models/Student.js";
+import { prisma } from "../config/database.js";
 import { fail } from "../utils/apiResponse.js";
 import { verifyAccessToken } from "../utils/tokens.js";
 
@@ -11,12 +10,15 @@ export async function protect(req, res, next) {
     }
     const token = header.slice(7);
     const decoded = verifyAccessToken(token);
-    const user = await User.findById(decoded.userId);
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
     if (!user) return fail(res, "User no longer exists", 401);
-    req.user = { id: user._id.toString(), role: user.role, email: user.email };
+    req.user = { id: user.id, role: user.role, email: user.email };
     if (user.role === "student") {
-      const student = await Student.findOne({ user: user._id });
-      req.student = student ? { id: student._id.toString() } : null;
+      const student = await prisma.student.findUnique({
+        where: { userId: user.id },
+        select: { id: true },
+      });
+      req.student = student ? { id: student.id } : null;
     }
     next();
   } catch {

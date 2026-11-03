@@ -1,11 +1,16 @@
-import mongoose from "mongoose";
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { logInfo } from '../utils/logger.js';
+
+const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+export const prisma = new PrismaClient({ adapter });
 
 export async function connectDB() {
-  const uri = process.env.MONGO_URI;
-  if (!uri) {
-    throw new Error("MONGO_URI is not defined");
+  try {
+    await prisma.$connect();
+    logInfo('PostgreSQL Connected via Prisma');
+  } catch (error) {
+    console.error(`Database connection error: ${error.message}`);
+    process.exit(1);
   }
-  mongoose.set("strictQuery", true);
-  await mongoose.connect(uri);
-  return mongoose.connection;
 }

@@ -1,25 +1,27 @@
-import { Application } from "../models/Application.js";
-import { PlacementDrive } from "../models/PlacementDrive.js";
-import { Student } from "../models/Student.js";
+import { prisma } from "../config/database.js";
 import { ok, fail, paginationMeta } from "../utils/apiResponse.js";
-import { getPagination, sortSpec } from "../utils/pagination.js";
+import { getPagination } from "../utils/pagination.js";
 import { isStudentEligibleForDrive } from "../services/eligibilityService.js";
 import { notifyUser } from "../services/notificationService.js";
 
 export async function applyToDrive(req, res, next) {
   try {
     if (!req.student?.id) return fail(res, "Student profile required", 403);
-    const student = await Student.findById(req.student.id);
-    const drive = await PlacementDrive.findById(req.params.driveId);
+    const student = await prisma.student.findUnique({ where: { id: req.student.id } });
+    const drive = await prisma.placementDrive.findUnique({ where: { id: req.params.driveId } });
+    
     if (!drive) return fail(res, "Placement drive not found", 404);
+    
     const { eligible, reasons } = isStudentEligibleForDrive(student, drive);
     if (!eligible) return fail(res, reasons.join("; "), 400);
 
     try {
-      const app = await Application.create({
-        student: student._id,
-        placementDrive: drive._id,
-        status: "pending",
+      const app = await prisma.application.create({
+        data: {
+          studentId: student.id,
+          placementDriveId: drive.id,
+          status: "pending",
+        }
       });
       await notifyUser(
         req.user.id,
@@ -30,7 +32,7 @@ export async function applyToDrive(req, res, next) {
       );
       return ok(res, app, "Application submitted", 201);
     } catch (e) {
-      if (e.code === 11000) return fail(res, "You have already applied to this drive", 409);
+      if (e.code === 'P2002') return fail(res, "You have already applied to this drive", 409);
       throw e;
     }
   } catch (e) {
@@ -41,14 +43,21 @@ export async function applyToDrive(req, res, next) {
 export async function withdrawApplication(req, res, next) {
   try {
     if (!req.student?.id) return fail(res, "Student profile required", 403);
-    const app = await Application.findOne({
-      _id: req.params.id,
-      student: req.student.id,
+    
+    const app = await prisma.application.findFirst({
+      where: {
+        id: req.params.id,
+        studentId: req.student.id,
+      }
     });
+    
     if (!app) return fail(res, "Application not found", 404);
-    app.status = "withdrawn";
-    await app.save();
-    return ok(res, app, "Withdrawn");
+    
+    const updated = await prisma.application.update({
+      where: { id: app.id },
+      data: { status: "withdrawn" }
+    });
+    return ok(res, updated, "Withdrawn");
   } catch (e) {
     next(e);
   }
@@ -59,25 +68,39 @@ export async function adminListApplications(req, res, next) {
     const { page, limit, skip } = getPagination(req.query);
     const q = {};
     if (req.query.status) q.status = req.query.status;
-    if (req.query.student) q.student = req.query.student;
-    if (req.query.drive) q.placementDrive = req.query.drive;
+    if (req.query.student) q.studentId = req.query.student;
+    if (req.query.drive) q.placementDriveId = req.query.drive;
     if (req.query.fraud === "true") q.fraudFlag = true;
+    
+    let sort = { appliedAt: 'desc' };
+    if (req.query.sort) {
+      const field = req.query.sort.replace('-', '');
+      const order = req.query.sort.startsWith('-') ? 'desc' : 'asc';
+      sort = { [field]: order };
+    }
+
     const [total, rows] = await Promise.all([
-      Application.countDocuments(q),
-      Application.find(q)
-        .sort(sortSpec(req.query, "-appliedAt"))
-        .skip(skip)
-        .limit(limit)
-        .populate({
-          path: "student",
-          select: "rollNumber cgpa department skills user graduationYear",
-          populate: { path: "user", select: "name email" },
-        })
-        .populate({
-          path: "placementDrive",
-          select: "title jobRole company",
-          populate: { path: "company", select: "name" },
-        }),
+      prisma.application.count({ where: q }),
+      prisma.application.findMany({
+        where: q,
+        orderBy: sort,
+        skip,
+        take: limit,
+        include: {
+          student: {
+            select: {
+              rollNumber: true, cgpa: true, department: true, skills: true, graduationYear: true,
+              user: { select: { name: true, email: true } }
+            }
+          },
+          placementDrive: {
+            select: {
+              title: true, jobRole: true,
+              company: { select: { name: true } }
+            }
+          }
+        }
+      })
     ]);
     return ok(res, { items: rows, meta: paginationMeta(total, page, limit) });
   } catch (e) {
@@ -87,20 +110,27 @@ export async function adminListApplications(req, res, next) {
 
 export async function adminUpdateApplication(req, res, next) {
   try {
-    const app = await Application.findById(req.params.id).populate({
-      path: "placementDrive",
-      select: "title",
+    const exists = await prisma.application.findUnique({
+      where: { id: req.params.id },
+      include: { placementDrive: { select: { title: true } } }
     });
-    if (!app) return fail(res, "Application not found", 404);
-    app.status = req.body.status;
-    if (req.body.remarks !== undefined) app.remarks = req.body.remarks;
-    if (req.body.fraudFlag !== undefined) app.fraudFlag = req.body.fraudFlag;
-    await app.save();
+    if (!exists) return fail(res, "Application not found", 404);
 
-    const studentDoc = await Student.findById(app.student);
-    if (studentDoc?.user) {
+    const dataToUpdate = {};
+    if (req.body.status !== undefined) dataToUpdate.status = req.body.status;
+    if (req.body.remarks !== undefined) dataToUpdate.remarks = req.body.remarks;
+    if (req.body.fraudFlag !== undefined) dataToUpdate.fraudFlag = req.body.fraudFlag;
+
+    const app = await prisma.application.update({
+      where: { id: req.params.id },
+      data: dataToUpdate,
+      include: { placementDrive: { select: { title: true, companyId: true } } }
+    });
+
+    const studentDoc = await prisma.student.findUnique({ where: { id: app.studentId } });
+    if (studentDoc?.userId) {
       await notifyUser(
-        studentDoc.user,
+        studentDoc.userId,
         `Application updated: ${app.placementDrive?.title || ""}`,
         `Your status is now "${app.status}". ${app.remarks || ""}`.trim(),
         "info",
@@ -109,11 +139,18 @@ export async function adminUpdateApplication(req, res, next) {
     }
 
     if (app.status === "offered") {
-      const driveFull = await PlacementDrive.findById(app.placementDrive).populate("company");
-      studentDoc.placed = true;
-      studentDoc.placedCompanyName = driveFull?.company?.name || "";
-      studentDoc.placementDriveId = app.placementDrive;
-      await studentDoc.save();
+      const driveFull = await prisma.placementDrive.findUnique({
+        where: { id: app.placementDriveId },
+        include: { company: true }
+      });
+      await prisma.student.update({
+        where: { id: app.studentId },
+        data: {
+          placed: true,
+          placedCompanyName: driveFull?.company?.name || "",
+          placementDriveId: app.placementDriveId
+        }
+      });
     }
     return ok(res, app, "Updated");
   } catch (e) {
@@ -123,8 +160,9 @@ export async function adminUpdateApplication(req, res, next) {
 
 export async function adminDeleteApplication(req, res, next) {
   try {
-    const app = await Application.findByIdAndDelete(req.params.id);
-    if (!app) return fail(res, "Not found", 404);
+    const exists = await prisma.application.findUnique({ where: { id: req.params.id } });
+    if (!exists) return fail(res, "Not found", 404);
+    await prisma.application.delete({ where: { id: req.params.id } });
     return ok(res, null, "Removed");
   } catch (e) {
     next(e);

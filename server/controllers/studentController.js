@@ -1,8 +1,5 @@
 import fs from "fs";
-import { Student } from "../models/Student.js";
-import { PlacementDrive } from "../models/PlacementDrive.js";
-import { Application } from "../models/Application.js";
-import { Interview } from "../models/Interview.js";
+import { prisma } from "../config/database.js";
 import { ok, fail } from "../utils/apiResponse.js";
 import { isStudentEligibleForDrive } from "../services/eligibilityService.js";
 import { computeResumeScore } from "../services/resumeScoreService.js";
@@ -10,7 +7,7 @@ import { recommendDrivesForStudent } from "../services/recommendationService.js"
 
 export async function getMyProfile(req, res, next) {
   try {
-    const student = await Student.findOne({ user: req.user.id });
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
     if (!student) return fail(res, "Student profile not found", 404);
     return ok(res, student);
   } catch (e) {
@@ -20,15 +17,27 @@ export async function getMyProfile(req, res, next) {
 
 export async function updateMyProfile(req, res, next) {
   try {
-    const student = await Student.findOne({ user: req.user.id });
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
     if (!student) return fail(res, "Student profile not found", 404);
+    
     const allowed = ["phone", "department", "cgpa", "backlogs", "graduationYear", "skills"];
+    const updateData = {};
     for (const k of allowed) {
-      if (req.body[k] !== undefined) student[k] = req.body[k];
+      if (req.body[k] !== undefined) updateData[k] = req.body[k];
     }
-    student.resumeScore = computeResumeScore(student, student.skills);
-    await student.save();
-    return ok(res, student, "Profile updated");
+    
+    const currentSkills = updateData.skills !== undefined ? updateData.skills : student.skills;
+    const currentCgpa = updateData.cgpa !== undefined ? updateData.cgpa : student.cgpa;
+    const currentDepartment = updateData.department !== undefined ? updateData.department : student.department;
+
+    updateData.resumeScore = computeResumeScore({ cgpa: currentCgpa, department: currentDepartment, skills: currentSkills }, currentSkills);
+    updateData.rankScore = Number(((currentCgpa || 0) * 10 + (currentSkills?.length || 0) * 2 + (updateData.resumeScore || 0) * 0.1).toFixed(2));
+
+    const updated = await prisma.student.update({
+      where: { id: student.id },
+      data: updateData
+    });
+    return ok(res, updated, "Profile updated");
   } catch (e) {
     next(e);
   }
@@ -36,9 +45,10 @@ export async function updateMyProfile(req, res, next) {
 
 export async function uploadResumeHandler(req, res, next) {
   try {
-    const student = await Student.findOne({ user: req.user.id });
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
     if (!student) return fail(res, "Student profile not found", 404);
     if (!req.file) return fail(res, "No file uploaded", 400);
+    
     if (student.resumePath && fs.existsSync(student.resumePath)) {
       try {
         fs.unlinkSync(student.resumePath);
@@ -46,13 +56,19 @@ export async function uploadResumeHandler(req, res, next) {
         /* ignore */
       }
     }
-    student.resumePath = req.file.path;
-    student.resumeFileName = req.file.originalname;
-    student.resumeScore = computeResumeScore(student, student.skills);
-    await student.save();
+    
+    const resumePath = req.file.path;
+    const resumeFileName = req.file.originalname;
+    const resumeScore = computeResumeScore(student, student.skills);
+    
+    const updated = await prisma.student.update({
+      where: { id: student.id },
+      data: { resumePath, resumeFileName, resumeScore }
+    });
+
     return ok(
       res,
-      { resumeFileName: student.resumeFileName, resumePath: student.resumePath },
+      { resumeFileName: updated.resumeFileName, resumePath: updated.resumePath },
       "Resume uploaded"
     );
   } catch (e) {
@@ -62,7 +78,7 @@ export async function uploadResumeHandler(req, res, next) {
 
 export async function downloadResume(req, res, next) {
   try {
-    const student = await Student.findOne({ user: req.user.id });
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
     if (!student?.resumePath) return fail(res, "No resume on file", 404);
     return res.download(student.resumePath, student.resumeFileName || "resume.pdf");
   } catch (e) {
@@ -72,12 +88,15 @@ export async function downloadResume(req, res, next) {
 
 export async function listEligibleDrives(req, res, next) {
   try {
-    const student = await Student.findOne({ user: req.user.id });
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
     if (!student) return fail(res, "Student profile not found", 404);
-    const drives = await PlacementDrive.find({ status: "open" })
-      .populate("company", "name industry website")
-      .sort({ applicationDeadline: 1 })
-      .lean();
+    
+    const drives = await prisma.placementDrive.findMany({
+      where: { status: "open" },
+      include: { company: { select: { name: true, industry: true, website: true } } },
+      orderBy: { applicationDeadline: 'asc' }
+    });
+    
     const enriched = drives.map((d) => {
       const { eligible, reasons } = isStudentEligibleForDrive(student, d);
       return { ...d, eligible, eligibilityReasons: reasons };
@@ -90,7 +109,7 @@ export async function listEligibleDrives(req, res, next) {
 
 export async function recommendDrives(req, res, next) {
   try {
-    const student = await Student.findOne({ user: req.user.id });
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
     if (!student) return fail(res, "Student profile not found", 404);
     const list = await recommendDrivesForStudent(student, 15);
     return ok(res, list);
@@ -101,24 +120,23 @@ export async function recommendDrives(req, res, next) {
 
 export async function myApplicationsSummary(req, res, next) {
   try {
-    const student = await Student.findOne({ user: req.user.id });
+    const student = await prisma.student.findUnique({ where: { userId: req.user.id } });
     if (!student) return fail(res, "Student profile not found", 404);
-    const apps = await Application.find({ student: student._id })
-      .populate({
-        path: "placementDrive",
-        populate: { path: "company", select: "name" },
-      })
-      .sort({ createdAt: -1 })
-      .lean();
+    
+    const apps = await prisma.application.findMany({
+      where: { studentId: student.id },
+      include: {
+        placementDrive: {
+          include: { company: { select: { name: true } } }
+        },
+        interviews: {
+          orderBy: { roundOrder: 'asc' }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
 
-    const withInterviews = await Promise.all(
-      apps.map(async (a) => {
-        const interviews = await Interview.find({ application: a._id }).sort({ roundOrder: 1 }).lean();
-        return { ...a, interviews };
-      })
-    );
-
-    return ok(res, withInterviews);
+    return ok(res, apps);
   } catch (e) {
     next(e);
   }

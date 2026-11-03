@@ -1,25 +1,23 @@
 import PDFDocument from "pdfkit";
-import { Student } from "../models/Student.js";
-import { Company } from "../models/Company.js";
-import { Application } from "../models/Application.js";
-import { Report } from "../models/Report.js";
+import { prisma } from "../config/database.js";
 import { ok } from "../utils/apiResponse.js";
 import fs from "fs";
 import path from "path";
 
 export async function generatePlacementPdf(req, res, next) {
   try {
-    const [placed, totals] = await Promise.all([
-      Student.find({ placed: true }).populate("user", "name email").limit(500),
-      Promise.all([
-        Student.countDocuments(),
-        Student.countDocuments({ placed: true }),
-        Application.countDocuments(),
-        Company.countDocuments(),
-      ]),
+    const [placed, totalStudents, placedCount, apps, comps] = await Promise.all([
+      prisma.student.findMany({
+        where: { placed: true },
+        include: { user: { select: { name: true, email: true } } },
+        take: 500
+      }),
+      prisma.student.count(),
+      prisma.student.count({ where: { placed: true } }),
+      prisma.application.count(),
+      prisma.company.count(),
     ]);
 
-    const [totalStudents, placedCount, apps, comps] = totals;
     const placementPct = totalStudents ? ((placedCount / totalStudents) * 100).toFixed(2) : 0;
 
     const reportsDir = path.join(process.cwd(), "uploads", "reports");
@@ -55,12 +53,14 @@ export async function generatePlacementPdf(req, res, next) {
       stream.on("error", reject);
     });
 
-    await Report.create({
-      title: "Placement Summary",
-      generatedBy: req.user.id,
-      type: "placement_summary",
-      payload: { totalStudents, placedCount, placementPct },
-      filePath,
+    await prisma.report.create({
+      data: {
+        title: "Placement Summary",
+        generatedById: req.user.id,
+        type: "placement_summary",
+        payload: { totalStudents, placedCount, placementPct },
+        filePath,
+      }
     });
 
     res.setHeader("Content-Type", "application/pdf");
@@ -73,7 +73,11 @@ export async function generatePlacementPdf(req, res, next) {
 
 export async function listReports(req, res, next) {
   try {
-    const rows = await Report.find().sort({ createdAt: -1 }).limit(50).populate("generatedBy", "name email");
+    const rows = await prisma.report.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      include: { generatedBy: { select: { name: true, email: true } } }
+    });
     return ok(res, rows);
   } catch (e) {
     next(e);

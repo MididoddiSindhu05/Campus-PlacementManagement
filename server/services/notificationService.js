@@ -1,13 +1,16 @@
-import { Notification } from "../models/Notification.js";
-import { User } from "../models/User.js";
+import { prisma } from "../config/database.js";
 import { sendMail } from "./mailService.js";
 
 export async function notifyUser(userId, title, message, type = "info", link = "") {
-  await Notification.create({ user: userId, title, message, type, link });
+  await prisma.notification.create({
+    data: { userId, title, message, type, link }
+  });
 }
 
 export async function notifyRole(role, title, message, type = "info", link = "") {
-  await Notification.create({ audienceRole: role, title, message, type, link });
+  await prisma.notification.create({
+    data: { audienceRole: role, title, message, type, link }
+  });
 }
 
 export async function notifyDriveReminder(drive, studentEmails) {
@@ -25,7 +28,10 @@ export async function notifyDriveReminder(drive, studentEmails) {
 export async function broadcastStudents(title, message, sendEmailToo = false) {
   await notifyRole("student", title, message, "reminder");
   if (sendEmailToo) {
-    const users = await User.find({ role: "student" }).select("email");
+    const users = await prisma.user.findMany({
+      where: { role: "student" },
+      select: { email: true }
+    });
     for (const u of users) {
       await sendMail({ to: u.email, subject: title, text: message });
     }

@@ -1,31 +1,33 @@
 import crypto from "crypto";
-import { Interview } from "../models/Interview.js";
-import { Application } from "../models/Application.js";
-import { Student } from "../models/Student.js";
+import { prisma } from "../config/database.js";
 import { ok, fail } from "../utils/apiResponse.js";
 import { notifyUser } from "../services/notificationService.js";
 
 export async function scheduleInterview(req, res, next) {
   try {
-    const application = await Application.findById(req.params.applicationId);
+    const application = await prisma.application.findUnique({ where: { id: req.params.applicationId } });
     if (!application) return fail(res, "Application not found", 404);
+    
     const token = crypto.randomBytes(16).toString("hex");
-    const doc = await Interview.create({
-      application: application._id,
-      roundName: req.body.roundName,
-      roundOrder: req.body.roundOrder ?? 1,
-      scheduledAt: req.body.scheduledAt,
-      venue: req.body.venue || "",
-      meetingLink: req.body.meetingLink || "",
-      instructions: req.body.instructions || "",
-      admitCardToken: token,
-      createdBy: req.user.id,
+    
+    const doc = await prisma.interview.create({
+      data: {
+        applicationId: application.id,
+        roundName: req.body.roundName,
+        roundOrder: req.body.roundOrder ?? 1,
+        scheduledAt: new Date(req.body.scheduledAt),
+        venue: req.body.venue || "",
+        meetingLink: req.body.meetingLink || "",
+        instructions: req.body.instructions || "",
+        admitCardToken: token,
+        createdById: req.user.id,
+      }
     });
 
-    const stud = await Student.findById(application.student);
-    if (stud?.user) {
+    const stud = await prisma.student.findUnique({ where: { id: application.studentId } });
+    if (stud?.userId) {
       await notifyUser(
-        stud.user,
+        stud.userId,
         `Interview scheduled: ${req.body.roundName}`,
         `Time: ${new Date(req.body.scheduledAt).toLocaleString()}${req.body.venue ? ` Venue: ${req.body.venue}` : ""}`,
         "reminder",
@@ -40,15 +42,20 @@ export async function scheduleInterview(req, res, next) {
 
 export async function listInterviewsForApplication(req, res, next) {
   try {
-    const application = await Application.findById(req.params.applicationId);
+    const application = await prisma.application.findUnique({ where: { id: req.params.applicationId } });
     if (!application) return fail(res, "Application not found", 404);
+    
     if (req.user.role === "student") {
-      const studentDoc = await Student.findOne({ user: req.user.id });
-      if (!studentDoc || studentDoc._id.toString() !== application.student.toString()) {
+      const studentDoc = await prisma.student.findUnique({ where: { userId: req.user.id } });
+      if (!studentDoc || studentDoc.id !== application.studentId) {
         return fail(res, "Forbidden", 403);
       }
     }
-    const rows = await Interview.find({ application: req.params.applicationId }).sort({ roundOrder: 1 });
+    
+    const rows = await prisma.interview.findMany({
+      where: { applicationId: req.params.applicationId },
+      orderBy: { roundOrder: 'asc' }
+    });
     return ok(res, rows);
   } catch (e) {
     next(e);
@@ -58,20 +65,30 @@ export async function listInterviewsForApplication(req, res, next) {
 export async function admitCardPdf(req, res, next) {
   try {
     if (!req.student?.id) return fail(res, "Forbidden", 403);
-    const interview = await Interview.findById(req.params.interviewId).populate({
-      path: "application",
-      populate: { path: "placementDrive", populate: { path: "company" } },
+    
+    const interview = await prisma.interview.findUnique({
+      where: { id: req.params.interviewId },
+      include: {
+        application: {
+          include: {
+            placementDrive: {
+              include: { company: true }
+            }
+          }
+        }
+      }
     });
     if (!interview) return fail(res, "Interview not found", 404);
 
     const appDoc = interview.application;
-    const studentDoc = await Student.findOne({ user: req.user.id });
-    if (!appDoc || studentDoc._id.toString() !== appDoc.student.toString()) {
+    const studentDoc = await prisma.student.findUnique({ where: { userId: req.user.id } });
+    
+    if (!appDoc || studentDoc.id !== appDoc.studentId) {
       return fail(res, "Forbidden", 403);
     }
 
     res.setHeader("Content-Type", "text/plain");
-    res.setHeader("Content-Disposition", `attachment; filename=admit-card-${interview._id}.txt`);
+    res.setHeader("Content-Disposition", `attachment; filename=admit-card-${interview.id}.txt`);
     const company = appDoc.placementDrive?.company?.name || "Company";
     const role = appDoc.placementDrive?.jobRole || "";
     const lines = [

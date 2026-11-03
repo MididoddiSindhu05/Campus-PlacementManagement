@@ -1,26 +1,29 @@
-import dotenv from "dotenv";
-import mongoose from "mongoose";
-import { User } from "../models/User.js";
-
-dotenv.config();
+import "dotenv/config";
+import bcrypt from "bcryptjs";
+import { connectDB, prisma } from "../config/database.js";
 
 async function seed() {
-  const uri = process.env.MONGO_URI;
   const email = process.env.ADMIN_EMAIL;
   const password = process.env.ADMIN_PASSWORD;
-  if (!uri || !email || !password) {
-    console.error("Set MONGO_URI, ADMIN_EMAIL, ADMIN_PASSWORD");
-    process.exit(1);
+  if (!process.env.DATABASE_URL || !email || !password) {
+    throw new Error("Set DATABASE_URL, ADMIN_EMAIL, and ADMIN_PASSWORD");
   }
-  await mongoose.connect(uri);
-  const exists = await User.findOne({ email });
-  if (exists) {
-    console.log("Admin already exists");
-    process.exit(0);
+
+  try {
+    await connectDB();
+    const exists = await prisma.user.findUnique({ where: { email } });
+    if (exists) {
+      console.log("Admin already exists");
+      return;
+    }
+    const hashedPassword = await bcrypt.hash(password, 12);
+    await prisma.user.create({
+      data: { email, password: hashedPassword, name: "Portal Admin", role: "admin" },
+    });
+    console.log("Admin seeded");
+  } finally {
+    await prisma.$disconnect();
   }
-  await User.create({ email, password, name: "Portal Admin", role: "admin" });
-  console.log("Admin seeded");
-  process.exit(0);
 }
 
 seed().catch((e) => {

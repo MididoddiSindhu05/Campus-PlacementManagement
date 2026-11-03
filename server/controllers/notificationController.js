@@ -1,21 +1,32 @@
-import { Notification } from "../models/Notification.js";
-import mongoose from "mongoose";
+import { prisma } from "../config/database.js";
 import { ok, fail } from "../utils/apiResponse.js";
 
 export async function myNotifications(req, res, next) {
   try {
-    const uid = new mongoose.Types.ObjectId(req.user.id);
-    const list = await Notification.find({
-      $or: [{ user: req.user.id }, { user: null, audienceRole: { $in: ["all", req.user.role] } }],
-    })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .lean();
+    const uid = req.user.id;
+    const list = await prisma.notification.findMany({
+      where: {
+        OR: [
+          { userId: uid },
+          { userId: null, audienceRole: { in: ["all", req.user.role] } }
+        ]
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        readBy: {
+          where: { userId: uid }
+        }
+      }
+    });
 
-    const withReadFlag = list.map((n) => ({
-      ...n,
-      read: n.readBy?.some((id) => id.equals(uid)),
-    }));
+    const withReadFlag = list.map((n) => {
+      const { readBy, ...rest } = n;
+      return {
+        ...rest,
+        read: readBy && readBy.length > 0,
+      };
+    });
 
     return ok(res, withReadFlag);
   } catch (e) {
@@ -25,12 +36,21 @@ export async function myNotifications(req, res, next) {
 
 export async function markNotificationRead(req, res, next) {
   try {
-    const n = await Notification.findById(req.params.id);
+    const n = await prisma.notification.findUnique({ where: { id: req.params.id } });
     if (!n) return fail(res, "Not found", 404);
-    if (!n.readBy.includes(req.user.id)) {
-      n.readBy.push(req.user.id);
-      await n.save();
+    
+    // Attempt to create a read record, ignore if it already exists
+    try {
+      await prisma.notificationRead.create({
+        data: {
+          notificationId: n.id,
+          userId: req.user.id
+        }
+      });
+    } catch (err) {
+      if (err.code !== 'P2002') throw err; // Ignore unique constraint violation
     }
+    
     return ok(res, n);
   } catch (e) {
     next(e);
@@ -40,13 +60,15 @@ export async function markNotificationRead(req, res, next) {
 export async function adminCreateNotification(req, res, next) {
   try {
     const { title, message, audienceRole, userId, link, type } = req.body;
-    const doc = await Notification.create({
-      title,
-      message,
-      link: link || "",
-      type: type || "info",
-      audienceRole: audienceRole || "student",
-      user: userId || null,
+    const doc = await prisma.notification.create({
+      data: {
+        title,
+        message,
+        link: link || "",
+        type: type || "info",
+        audienceRole: audienceRole || "student",
+        userId: userId || null,
+      }
     });
     return ok(res, doc, "Notification created", 201);
   } catch (e) {

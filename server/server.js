@@ -1,16 +1,13 @@
 import "dotenv/config";
-import mongoose from "mongoose";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import mongoSanitize from "express-mongo-sanitize";
 import rateLimit from "express-rate-limit";
 import morgan from "morgan";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import { connectDB } from "./config/database.js";
-import { User } from "./models/User.js";
+import { connectDB, prisma } from "./config/database.js";
 import { errorHandler, notFound } from "./middleware/errorHandler.js";
 
 import authRoutes from "./routes/authRoutes.js";
@@ -48,7 +45,6 @@ app.use(limiter);
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
-app.use(mongoSanitize());
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 
 const uploadsStatic = path.join(process.cwd(), "uploads");
@@ -87,9 +83,11 @@ async function seedAdminBoot() {
   const email = process.env.ADMIN_EMAIL;
   const password = process.env.ADMIN_PASSWORD;
   if (!email || !password) return;
-  const exists = await User.findOne({ email });
+  const exists = await prisma.user.findUnique({ where: { email } });
   if (exists) return;
-  await User.create({ email, password, name: "Portal Admin", role: "admin" });
+  const bcrypt = (await import("bcryptjs")).default;
+  const hashedPassword = await bcrypt.hash(password, 12);
+  await prisma.user.create({ data: { email, password: hashedPassword, name: "Portal Admin", role: "admin" } });
   logInfo("Bootstrap admin created from env");
 }
 
@@ -99,7 +97,7 @@ startDriveReminderJob();
 const server = app.listen(PORT, () => logInfo(`API listening`, { PORT }));
 
 const shutdown = async () => {
-  await mongoose?.connection?.close().catch(() => {});
+  await prisma.$disconnect();
   server.close(() => process.exit(0));
 };
 process.on("SIGTERM", shutdown);

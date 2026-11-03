@@ -2,18 +2,16 @@
 
 Deploy the API and SPA independently (two GitHub repos or mono-repo workflows both work).
 
-## MongoDB Atlas
+## PostgreSQL
 
-1. Provision an M10 (or free M0 sandbox) cluster in the geography closest to your API hosts.
-2. Create database user credentials with read/write privileges on `placementPortal` (database name configurable).
-3. Add `Network Access → IP Allowlist`:
-   - `0.0.0.0/0` temporarily for Render/Railway dynamic egress.
-   - Tighten to provider static egress when available.
+1. Provision a managed PostgreSQL database in the geography closest to your API host.
+2. Create a database and an application user with access to it.
+3. Allow network access from the API host, preferably using the provider's static egress addresses.
 
-Connection string placeholder:
+Set `DATABASE_URL` to the provider's direct PostgreSQL connection string:
 
 ```
-mongodb+srv://USER:PASSWORD@cluster123.abcd.mongodb.net/placementPortal?retryWrites=true&w=majority
+postgresql://USER:PASSWORD@HOST:5432/placementPortal?sslmode=require
 ```
 
 ---
@@ -27,7 +25,7 @@ mongodb+srv://USER:PASSWORD@cluster123.abcd.mongodb.net/placementPortal?retryWri
 
 | Key | Meaning |
 | --- | ------- |
-| `MONGO_URI` | Atlas URI |
+| `DATABASE_URL` | Direct PostgreSQL connection string |
 | `JWT_SECRET` | ≥32-byte random secret |
 | `CLIENT_URL` | Comma-separated web origins (`https://app.vercel.app,http://localhost:5173`) |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First-run administrator seed |
@@ -60,7 +58,7 @@ Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`. Without SMT
 ## Production hardening checklist
 
 1. Rotate `ADMIN_PASSWORD` post bootstrap.
-2. Enable MongoDB auditing + backup snapshots.
+2. Enable PostgreSQL audit logging + backup snapshots.
 3. Tune `RATE_LIMIT_MAX` downward if abusive traffic observed.
 4. Consider Cloudflare WAF in front.
 5. Separate secrets per environment (`preview` vs `production` namespaces).

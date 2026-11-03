@@ -1,0 +1,182 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                   String    @id @default(uuid())
+  email                String    @unique
+  password             String
+  name                 String
+  role                 String    @default("student") // "student", "admin", "placement_officer"
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
+  refreshToken         String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  studentProfile    Student?
+  companiesCreated  Company[]
+  drivesPosted      PlacementDrive[]
+  interviewsCreated Interview[]
+  notifications     Notification[]
+  reportsGenerated  Report[]
+  notificationsRead NotificationRead[]
+}
+
+model Company {
+  id           String   @id @default(uuid())
+  name         String
+  industry     String?  @default("")
+  description  String?  @default("")
+  website      String?  @default("")
+  contactEmail String?  @default("")
+  logoUrl      String?  @default("")
+  createdById  String?
+  createdBy    User?    @relation(fields: [createdById], references: [id])
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  placementDrives PlacementDrive[]
+}
+
+model PlacementDrive {
+  id                  String    @id @default(uuid())
+  companyId           String
+  company             Company   @relation(fields: [companyId], references: [id])
+  title               String
+  jobRole             String
+  description         String?   @default("")
+  salaryMin           Float?    @default(0)
+  salaryMax           Float?    @default(0)
+  currency            String?   @default("INR")
+  minCgpa             Float?    @default(0)
+  maxBacklogs         Int?      @default(99)
+  requiredSkills      String[]
+  eligibleDepartments String[]
+  graduationYears     Int[]
+  openings            Int?      @default(1)
+  applicationDeadline DateTime
+  driveDate           DateTime?
+  status              String?   @default("open") // "draft", "open", "closed", "completed"
+  postedById          String?
+  postedBy            User?     @relation(fields: [postedById], references: [id])
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  rounds       DriveRound[]
+  applications Application[]
+  students     Student[]     @relation("StudentPlacedDrive")
+}
+
+model DriveRound {
+  id          String         @id @default(uuid())
+  driveId     String
+  drive       PlacementDrive @relation(fields: [driveId], references: [id], onDelete: Cascade)
+  name        String
+  order       Int            @default(1)
+  description String?        @default("")
+}
+
+model Student {
+  id                String          @id @default(uuid())
+  userId            String          @unique
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rollNumber        String          @unique
+  phone             String?         @default("")
+  department        String
+  cgpa              Float
+  backlogs          Int?            @default(0)
+  graduationYear    Int
+  skills            String[]
+  resumeFileName    String?         @default("")
+  resumePath        String?         @default("")
+  resumeScore       Float?          @default(0)
+  placed            Boolean?        @default(false)
+  placedCompanyName String?         @default("")
+  placementDriveId  String?
+  placementDrive    PlacementDrive? @relation("StudentPlacedDrive", fields: [placementDriveId], references: [id])
+  rankScore         Float?          @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  applications Application[]
+}
+
+model Application {
+  id               String         @id @default(uuid())
+  studentId        String
+  student          Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  placementDriveId String
+  placementDrive   PlacementDrive @relation(fields: [placementDriveId], references: [id], onDelete: Cascade)
+  status           String?        @default("pending") // "pending", "shortlisted", "rejected", "offered", "withdrawn"
+  remarks          String?        @default("")
+  fraudFlag        Boolean?       @default(false)
+  appliedAt        DateTime       @default(now())
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  interviews Interview[]
+
+  @@unique([studentId, placementDriveId])
+}
+
+model Interview {
+  id             String      @id @default(uuid())
+  applicationId  String
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  roundName      String
+  roundOrder     Int?        @default(1)
+  scheduledAt    DateTime
+  venue          String?     @default("")
+  meetingLink    String?     @default("")
+  instructions   String?     @default("")
+  admitCardToken String?     @default("")
+  status         String?     @default("scheduled") // "scheduled", "completed", "cancelled", "no_show"
+  createdById    String?
+  createdBy      User?       @relation(fields: [createdById], references: [id])
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
+
+model Notification {
+  id           String   @id @default(uuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  audienceRole String?  @default("all") // "all", "student", "admin", "placement_officer"
+  title        String
+  message      String
+  type         String?  @default("info") // "info", "reminder", "success", "alert"
+  link         String?  @default("")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  readBy NotificationRead[]
+}
+
+model NotificationRead {
+  id             String       @id @default(uuid())
+  notificationId String
+  userId         String
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt         DateTime     @default(now())
+
+  @@unique([notificationId, userId])
+}
+
+model Report {
+  id            String   @id @default(uuid())
+  title         String
+  generatedById String
+  generatedBy   User     @relation(fields: [generatedById], references: [id])
+  type          String?  @default("placement_summary") // "placement_summary", "student_export", "department_stats", "custom"
+  payload       Json?    @default("{}")
+  filePath      String?  @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

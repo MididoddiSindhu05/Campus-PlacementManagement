@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { useDispatch, useSelector } from "react-redux";
 import toast from "react-hot-toast";
 import { loginThunk, bootstrapAuth } from "../../store/slices/authSlice.js";
+import AuthLayout from "../../components/layout/AuthLayout.jsx";
 
 export default function StudentLogin() {
   const { register, handleSubmit } = useForm({ defaultValues: { email: "", password: "" } });
@@ -25,41 +26,41 @@ export default function StudentLogin() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
-      >
-        <h1 className="text-2xl font-semibold text-slate-900">Student login</h1>
-        <p className="mt-2 text-sm text-slate-500">Use your institute email credentials.</p>
-        <label className="mt-8 block text-sm font-medium">
-          Email
+    <AuthLayout title="Student Login" subtitle="Access your campus placement dashboard.">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <div>
+          <label className="block text-sm font-medium text-slate-200">Email Address</label>
           <input
             {...register("email", { required: true })}
             type="email"
-            className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+            className="mt-2 block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-slate-400 focus:border-teal-500 focus:ring-teal-500 sm:text-sm transition-colors duration-200"
+            placeholder="you@college.edu"
           />
-        </label>
-        <label className="mt-4 block text-sm font-medium">
-          Password
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-200">Password</label>
           <input
             {...register("password", { required: true })}
             type="password"
-            className="mt-2 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+            className="mt-2 block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-slate-400 focus:border-teal-500 focus:ring-teal-500 sm:text-sm transition-colors duration-200"
+            placeholder="••••••••"
           />
-        </label>
-        <div className="mt-6 flex justify-between text-xs">
-          <Link to="/forgot-password" className="text-primary hover:underline">
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <Link to="/forgot-password" className="text-teal-400 hover:text-teal-300 transition-colors">
             Forgot password?
           </Link>
-          <Link to="/student/register" className="font-medium text-slate-700 hover:text-slate-900">
-            Need an account?
+          <Link to="/student/register" className="text-slate-300 hover:text-white transition-colors">
+            Create an account
           </Link>
         </div>
-        <button type="submit" className="mt-6 w-full rounded-md bg-primary py-2 text-sm font-semibold text-white hover:bg-primary-dark">
-          Continue
+        <button
+          type="submit"
+          className="flex w-full justify-center rounded-lg bg-teal-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500 transition-all duration-200 active:scale-[0.98]"
+        >
+          Sign in
         </button>
       </form>
-    </div>
+    </AuthLayout>
   );
 }

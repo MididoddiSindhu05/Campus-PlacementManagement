@@ -1,15 +1,16 @@
-import { PlacementDrive } from "../models/PlacementDrive.js";
+import { prisma } from "../config/database.js";
 import { isStudentEligibleForDrive } from "./eligibilityService.js";
 
 /**
  * Score drives for a student: eligibility + skill overlap.
  */
 export async function recommendDrivesForStudent(student, limit = 10) {
-  const drives = await PlacementDrive.find({ status: "open" })
-    .populate("company", "name industry")
-    .sort({ applicationDeadline: 1 })
-    .limit(100)
-    .lean();
+  const drives = await prisma.placementDrive.findMany({
+    where: { status: "open" },
+    include: { company: { select: { name: true, industry: true } } },
+    orderBy: { applicationDeadline: 'asc' },
+    take: 100
+  });
 
   const scored = [];
   for (const d of drives) {

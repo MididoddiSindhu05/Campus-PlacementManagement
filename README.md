@@ -1,6 +1,6 @@
 ## College Placement Management Portal
 
-Production-minded MERN application that models end-to-end campus recruitment operations: recruiter master data, drive publishing with eligibility compilers, guarded applications (duplicate prevention enforced at MongoDB index level), interviewing, analytics, artefacts, notifications, CSV/PDF exports, and differentiated staff roles (`admin`, `placement_officer`, `student`).
+Production-minded React, Express, and PostgreSQL application that models end-to-end campus recruitment operations: recruiter master data, drive publishing with eligibility compilers, guarded applications (duplicate prevention enforced by a database constraint), interviewing, analytics, artefacts, notifications, CSV/PDF exports, and differentiated staff roles (`admin`, `placement_officer`, `student`).
 
 ### Highlights
 
@@ -8,9 +8,9 @@ Production-minded MERN application that models end-to-end campus recruitment ope
 | ------ | ------ |
 | API design | Modular controllers, Joi-free validation via **express-validator**, unified response envelope, reusable pagination helpers |
 | Auth | bcrypt-hashed passwords, JWT access tokens, RBAC middleware, bootstrap admin via env secrets |
-| Data model | Dedicated collections for Users, Students, Companies, PlacementDrives, Applications, Notifications, Interviews, Reports |
+| Data model | Prisma-managed relational tables for users, students, companies, drives, applications, notifications, interviews, and reports |
 | Placement logic | Composite eligibility evaluator + ranking + heuristic resume scoring feeding recommendations |
-| Security | helmet, sanitized queries (`express-mongo-sanitize`), CORS whitelist, centralized rate-limit, Multer safeguards |
+| Security | helmet, CORS whitelist, centralized rate-limit, Multer safeguards |
 | Experience | Responsive dual dashboards (students + placements cell) with Redux Toolkit bootstrap, Axios interceptors, Recharts summaries |
 
 Detailed endpoint contracts live in [`docs/API.md`](docs/API.md). Hosting instructions in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
@@ -33,7 +33,7 @@ Backend tree mirrors requested architecture (`controllers`, `routes`, `models`, 
 
 ### Local development
 
-Requirements: Node.js ≥ 18, npm, Atlas cluster reachable from workstation.
+Requirements: Node.js ≥ 18, npm, and a PostgreSQL database reachable from the API.
 
 ```powershell
 cp server\.env.example server\.env       # populate secrets
@@ -54,7 +54,7 @@ Administrator auto-seeds whenever `ADMIN_EMAIL` / `ADMIN_PASSWORD` references a 
 2. Résumés upload behind Multer validations (MIME + ≤5 MB).
 3. `GET /students/drives/eligible` computes per-drive reasons preventing front-end spoofing.
 4. `recommended` cohort blends eligibility + weighted skill overlaps.
-5. Applications route through transactional duplicate guard `{ student, placementDrive }` compound unique index.
+5. Applications route through a composite unique constraint on `{ studentId, placementDriveId }`.
 
 ### Staff workflows
 
@@ -76,7 +76,7 @@ Add Jest/Vitest for services (`eligibility`, `resumeScore`) + Supertest suites a
 
 | Layer | Recommendation |
 | ----- | ------------- |
-| DB | MongoDB Atlas |
+| DB | Managed PostgreSQL |
 | API | Render or Railway (`server/` directory) |
 | SPA | Vercel (`client/` directory, `npm run build`) |
 

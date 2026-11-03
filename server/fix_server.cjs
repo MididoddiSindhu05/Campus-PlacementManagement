@@ -1,11 +1,1 @@
-const fs = require('fs');
-let content = fs.readFileSync('server.js', 'utf8');
-const searchStr = 'process.on("SIGINT", shutdown);';
-const idx = content.indexOf(searchStr);
-if (idx !== -1) {
-  const newContent = content.substring(0, idx + searchStr.length) + '\n';
-  fs.writeFileSync('server.js', newContent);
-  console.log('Fixed server.js');
-} else {
-  console.log('Could not find search string in server.js');
-}
+const fs = require('fs'); let c = fs.readFileSync('server.js', 'utf8'); c = c.replace('import mongoose from "mongoose";\r\n', ''); c = c.replace('import mongoSanitize from "express-mongo-sanitize";\r\n', ''); c = c.replace('import { User } from "./models/User.js";\r\n', ''); c = c.replace('import { connectDB } from "./config/database.js";', 'import { connectDB, prisma } from "./config/database.js";'); c = c.replace('app.use(mongoSanitize());\r\n', ''); c = c.replace(/const exists = await User\.findOne\({ email }\);[\s\S]*?await User\.create\({ email, password, name: "Portal Admin", role: "admin" }\);/, 'const exists = await prisma.user.findUnique({ where: { email } });\n  if (exists) return;\n  const bcrypt = (await import("bcryptjs")).default;\n  const hashedPassword = await bcrypt.hash(password, 12);\n  await prisma.user.create({ data: { email, password: hashedPassword, name: "Portal Admin", role: "admin" } });'); c = c.replace('await mongoose?.connection?.close().catch(() => {});', 'await prisma.();'); fs.writeFileSync('server.js', c);

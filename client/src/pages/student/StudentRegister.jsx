@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form";
 import { useDispatch, useSelector } from "react-redux";
 import toast from "react-hot-toast";
 import { registerThunk, bootstrapAuth } from "../../store/slices/authSlice.js";
+import AuthLayout from "../../components/layout/AuthLayout.jsx";
 
 export default function StudentRegister() {
   const { register, handleSubmit } = useForm({
@@ -55,83 +56,67 @@ export default function StudentRegister() {
     }
   }
 
+  const inputClass = "mt-2 block w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2.5 text-white placeholder-slate-400 focus:border-teal-500 focus:ring-teal-500 sm:text-sm transition-colors duration-200";
+  const labelClass = "block text-sm font-medium text-slate-200";
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12">
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
-      >
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-slate-900">Student registration</h1>
-          <Link to="/student/login" className="text-sm text-primary hover:underline">
-            Have an account?
+    <AuthLayout title="Student Registration" subtitle="Create your profile to get started.">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <div>
+          <label className={labelClass}>Full Name</label>
+          <input {...register("name", { required: true })} className={inputClass} placeholder="John Doe" />
+        </div>
+        <div>
+          <label className={labelClass}>Email Address</label>
+          <input {...register("email", { required: true })} type="email" className={inputClass} placeholder="john@college.edu" />
+        </div>
+        <div>
+          <label className={labelClass}>Password (min 8 chars)</label>
+          <input {...register("password", { required: true, minLength: 8 })} type="password" className={inputClass} placeholder="••••••••" />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={labelClass}>Roll Number</label>
+            <input {...register("rollNumber", { required: true })} className={inputClass} placeholder="CS21001" />
+          </div>
+          <div>
+            <label className={labelClass}>Department</label>
+            <input {...register("department")} className={inputClass} placeholder="CSE" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className={labelClass}>CGPA</label>
+            <input {...register("cgpa", { valueAsNumber: true })} step="0.01" type="number" className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Backlogs</label>
+            <input {...register("backlogs", { valueAsNumber: true })} type="number" className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Grad Year</label>
+            <input {...register("graduationYear", { valueAsNumber: true })} type="number" className={inputClass} />
+          </div>
+        </div>
+        <div>
+          <label className={labelClass}>Skills (comma separated)</label>
+          <input {...register("skillsInput")} className={inputClass} placeholder="React, Node.js, Python" />
+        </div>
+
+        <div className="pt-4 flex items-center justify-between text-sm">
+          <span className="text-slate-400">Already have an account?</span>
+          <Link to="/student/login" className="text-teal-400 hover:text-teal-300 transition-colors">
+            Sign in
           </Link>
         </div>
 
-        <div className="mt-8 grid gap-4 md:grid-cols-2">
-          <label className="text-sm font-medium">
-            Full name
-            <input {...register("name", { required: true })} className="mt-2 w-full rounded-md border px-3 py-2 text-sm" />
-          </label>
-          <label className="text-sm font-medium">
-            Email
-            <input
-              {...register("email", { required: true })}
-              type="email"
-              className="mt-2 w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="text-sm font-medium md:col-span-2">
-            Password (min 8 chars)
-            <input
-              {...register("password", { required: true, minLength: 8 })}
-              type="password"
-              className="mt-2 w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="text-sm font-medium">
-            Roll number
-            <input {...register("rollNumber", { required: true })} className="mt-2 w-full rounded-md border px-3 py-2 text-sm" />
-          </label>
-          <label className="text-sm font-medium">
-            Department
-            <input {...register("department")} className="mt-2 w-full rounded-md border px-3 py-2 text-sm" />
-          </label>
-          <label className="text-sm font-medium">
-            CGPA
-            <input
-              {...register("cgpa", { valueAsNumber: true })}
-              step="0.01"
-              type="number"
-              className="mt-2 w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="text-sm font-medium">
-            Backlogs
-            <input
-              {...register("backlogs", { valueAsNumber: true })}
-              type="number"
-              className="mt-2 w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="text-sm font-medium">
-            Graduation year
-            <input
-              {...register("graduationYear", { valueAsNumber: true })}
-              type="number"
-              className="mt-2 w-full rounded-md border px-3 py-2 text-sm"
-            />
-          </label>
-          <label className="text-sm font-medium md:col-span-2">
-            Skills (comma separated)
-            <input {...register("skillsInput")} className="mt-2 w-full rounded-md border px-3 py-2 text-sm" />
-          </label>
-        </div>
-
-        <button type="submit" className="mt-10 w-full rounded-md bg-primary py-2 font-semibold text-white hover:bg-primary-dark">
-          Create account
+        <button
+          type="submit"
+          className="mt-4 flex w-full justify-center rounded-lg bg-teal-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-500 transition-all duration-200 active:scale-[0.98]"
+        >
+          Create Account
         </button>
       </form>
-    </div>
+    </AuthLayout>
   );
 }

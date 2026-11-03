@@ -1,7 +1,4 @@
-import { Student } from "../models/Student.js";
-import { Company } from "../models/Company.js";
-import { PlacementDrive } from "../models/PlacementDrive.js";
-import { Application } from "../models/Application.js";
+import { prisma } from "../config/database.js";
 import { ok } from "../utils/apiResponse.js";
 
 export async function getAnalyticsDashboard(req, res, next) {
@@ -12,59 +9,61 @@ export async function getAnalyticsDashboard(req, res, next) {
       totalCompanies,
       totalDrives,
       totalApplications,
-      deptAgg,
+      deptAggRaw,
       packageAgg,
+      eligibleVsAppliedAgg,
+      applicationsByMonthRaw
     ] = await Promise.all([
-      Student.countDocuments(),
-      Student.countDocuments({ placed: true }),
-      Company.countDocuments({ isActive: true }),
-      PlacementDrive.countDocuments(),
-      Application.countDocuments(),
-      Student.aggregate([
-        {
-          $group: {
-            _id: "$department",
-            placed: { $sum: { $cond: ["$placed", 1, 0] } },
-            total: { $sum: 1 },
-          },
-        },
-      ]),
-      PlacementDrive.aggregate([
-        { $match: { status: { $in: ["open", "closed", "completed"] } } },
-        {
-          $group: {
-            _id: null,
-            maxPackage: { $max: "$salaryMax" },
-            avgPackage: { $avg: "$salaryMax" },
-          },
-        },
-      ]),
+      prisma.student.count(),
+      prisma.student.count({ where: { placed: true } }),
+      prisma.company.count({ where: { isActive: true } }),
+      prisma.placementDrive.count(),
+      prisma.application.count(),
+      prisma.$queryRaw`
+        SELECT department as "_id", 
+               CAST(SUM(CASE WHEN placed = true THEN 1 ELSE 0 END) AS INTEGER) as placed, 
+               CAST(COUNT(*) AS INTEGER) as total
+        FROM "Student"
+        GROUP BY department
+      `,
+      prisma.placementDrive.aggregate({
+        where: { status: { in: ["open", "closed", "completed"] } },
+        _max: { salaryMax: true },
+        _avg: { salaryMax: true },
+      }),
+      prisma.application.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+      prisma.$queryRaw`
+        SELECT 
+          EXTRACT(YEAR FROM "appliedAt") as y, 
+          EXTRACT(MONTH FROM "appliedAt") as m, 
+          CAST(COUNT(*) AS INTEGER) as count
+        FROM "Application"
+        GROUP BY EXTRACT(YEAR FROM "appliedAt"), EXTRACT(MONTH FROM "appliedAt")
+        ORDER BY y ASC, m ASC
+        LIMIT 12
+      `
     ]);
 
     const placementPct = totalStudents ? Math.round((placedStudents / totalStudents) * 1000) / 10 : 0;
 
-    const eligibleVsAppliedAgg = await Application.aggregate([
-      {
-        $group: {
-          _id: "$status",
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+    const applicationStatusMix = eligibleVsAppliedAgg.map(item => ({
+      _id: item.status,
+      count: item._count._all
+    }));
 
-    const applicationsByMonth = await Application.aggregate([
-      {
-        $group: {
-          _id: {
-            y: { $year: "$appliedAt" },
-            m: { $month: "$appliedAt" },
-          },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { "_id.y": 1, "_id.m": 1 } },
-      { $limit: 12 },
-    ]);
+    const applicationsByMonth = (applicationsByMonthRaw || []).map(item => ({
+      _id: { y: Number(item.y), m: Number(item.m) },
+      count: Number(item.count)
+    }));
+
+    const deptAgg = (deptAggRaw || []).map(item => ({
+      _id: item._id,
+      placed: Number(item.placed),
+      total: Number(item.total)
+    }));
 
     return ok(res, {
       totals: {
@@ -75,9 +74,12 @@ export async function getAnalyticsDashboard(req, res, next) {
         drives: totalDrives,
         applications: totalApplications,
       },
-      packages: packageAgg[0] || { maxPackage: 0, avgPackage: 0 },
+      packages: { 
+        maxPackage: packageAgg?._max?.salaryMax || 0, 
+        avgPackage: packageAgg?._avg?.salaryMax || 0 
+      },
       departmentWise: deptAgg,
-      applicationStatusMix: eligibleVsAppliedAgg,
+      applicationStatusMix,
       placementTrends: applicationsByMonth,
     });
   } catch (e) {
