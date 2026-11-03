@@ -82,6 +82,8 @@ Add Jest/Vitest for services (`eligibility`, `resumeScore`) + Supertest suites a
 
 See deployment doc for environment matrix and disk mounting guidance for uploads.
 
+GitHub Pages is also supported through `.github/workflows/deploy-pages.yml`. Set the repository's Pages source to **GitHub Actions**; the client is published at [mididoddisindhu05.github.io/Campus-PlacementManagement](https://mididoddisindhu05.github.io/Campus-PlacementManagement/). Set the Actions variable `VITE_API_URL` to a deployed API origin for login and data features; Pages hosts only the client.
+
 ---
 
 ### License / contributions
